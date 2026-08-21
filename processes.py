@@ -1,99 +1,76 @@
-from enum import Enum, auto
+from enum import Enum
+from dataclasses import dataclass
 from typing import List, Dict
 
 class ProcessType(Enum):
-    MONTHLY = auto()
-    TERMINATION = auto()
-    ADVANCE = auto()
-    OFF_CYCLE = auto()
-    BIWEEKLY = auto()
-    BONUS = auto()
+    MONTHLY = "Monthly Payroll"
+    BIWEEKLY = "Biweekly Payroll"
+    OFF_CYCLE = "Off-Cycle Payroll"
+    BONUS = "Bonus / Incentive"
+    TERMINATION = "Termination / Settlement"
 
-class ActivityType(Enum):
-    CUT_OFF = auto()
-    RUN = auto()
-    REPORTS = auto()
-    REQUEST_SIGN_OFF = auto()
-    SEND_SIGN_OFF = auto()
-    APPROVE_SIGN_OFF = auto()
-    SEND_BANK_FILE = auto()
-    BANK_FILE_APPROVAL = auto()
-    GENERAL_LEDGER = auto()
-    OPEN_G2 = auto()
-    PAY_DAY = auto()
+@dataclass
+class ActivityRule:
+    activity: str
+    offset_bh: int  # Offset en días hábiles respecto al Pay Day (0)
 
-# Definición de qué actividades aplican a cada proceso
-PROCESS_ACTIVITIES: Dict[ProcessType, List[ActivityType]] = {
+# Matriz de SLAs estándar
+PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
     ProcessType.MONTHLY: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.REPORTS,
-        ActivityType.REQUEST_SIGN_OFF,
-        ActivityType.SEND_SIGN_OFF,
-        ActivityType.APPROVE_SIGN_OFF,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.OPEN_G2,
-        ActivityType.PAY_DAY,
-    ],
-    ProcessType.TERMINATION: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.REPORTS,
-        ActivityType.REQUEST_SIGN_OFF,
-        ActivityType.SEND_SIGN_OFF,
-        ActivityType.APPROVE_SIGN_OFF,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.PAY_DAY,
-    ],
-    ProcessType.ADVANCE: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.PAY_DAY,
-    ],
-    ProcessType.OFF_CYCLE: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.REPORTS,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.PAY_DAY,
+        ActivityRule("CUT_OFF", -7),
+        ActivityRule("RUN", -6),
+        ActivityRule("REPORTS", -5),
+        ActivityRule("REQUEST_SIGN_OFF", -3),
+        ActivityRule("SEND_SIGN_OFF", -3),
+        ActivityRule("APPROVE_SIGN_OFF", -3),
+        ActivityRule("SEND_BANK_FILE", -2),
+        ActivityRule("BANK_FILE_APPROVAL", -2),
+        ActivityRule("GENERAL_LEDGER", -1),
+        ActivityRule("OPEN_G2", -1),
+        ActivityRule("PAY_DAY", 0),
     ],
     ProcessType.BIWEEKLY: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.REPORTS,
-        ActivityType.REQUEST_SIGN_OFF,
-        ActivityType.SEND_SIGN_OFF,
-        ActivityType.APPROVE_SIGN_OFF,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.PAY_DAY,
+        ActivityRule("CUT_OFF", -5),
+        ActivityRule("RUN", -4),
+        ActivityRule("REPORTS", -3),
+        ActivityRule("REQUEST_SIGN_OFF", -2),
+        ActivityRule("SEND_SIGN_OFF", -2),
+        ActivityRule("APPROVE_SIGN_OFF", -2),
+        ActivityRule("SEND_BANK_FILE", -1),
+        ActivityRule("BANK_FILE_APPROVAL", -1),
+        ActivityRule("GENERAL_LEDGER", -1),
+        ActivityRule("PAY_DAY", 0),
+    ],
+    ProcessType.OFF_CYCLE: [
+        ActivityRule("CUT_OFF", -4),
+        ActivityRule("RUN", -3),
+        ActivityRule("REPORTS", -2),
+        ActivityRule("REQUEST_SIGN_OFF", -1),
+        ActivityRule("SEND_SIGN_OFF", -1),
+        ActivityRule("APPROVE_SIGN_OFF", -1),
+        ActivityRule("SEND_BANK_FILE", -1),
+        ActivityRule("PAY_DAY", 0),
     ],
     ProcessType.BONUS: [
-        ActivityType.CUT_OFF,
-        ActivityType.RUN,
-        ActivityType.REPORTS,
-        ActivityType.REQUEST_SIGN_OFF,
-        ActivityType.SEND_SIGN_OFF,
-        ActivityType.APPROVE_SIGN_OFF,
-        ActivityType.SEND_BANK_FILE,
-        ActivityType.BANK_FILE_APPROVAL,
-        ActivityType.GENERAL_LEDGER,
-        ActivityType.PAY_DAY,
+        ActivityRule("CUT_OFF", -8),
+        ActivityRule("RUN", -7),
+        ActivityRule("REPORTS", -6),
+        ActivityRule("REQUEST_SIGN_OFF", -4),
+        ActivityRule("SEND_SIGN_OFF", -4),
+        ActivityRule("APPROVE_SIGN_OFF", -4),
+        ActivityRule("SEND_BANK_FILE", -2),
+        ActivityRule("BANK_FILE_APPROVAL", -2),
+        ActivityRule("GENERAL_LEDGER", -1),
+        ActivityRule("PAY_DAY", 0),
+    ],
+    ProcessType.TERMINATION: [
+        ActivityRule("CUT_OFF", -3),
+        ActivityRule("RUN", -2),
+        ActivityRule("REPORTS", -2),
+        ActivityRule("REQUEST_SIGN_OFF", -1),
+        ActivityRule("SEND_SIGN_OFF", -1),
+        ActivityRule("APPROVE_SIGN_OFF", -1),
+        ActivityRule("SEND_BANK_FILE", -1),
+        ActivityRule("PAY_DAY", 0),
     ],
 }
-
-def get_process_activities(process: ProcessType) -> List[ActivityType]:
-    """Retorna la lista de actividades configuradas para un proceso determinado."""
-    if process not in PROCESS_ACTIVITIES:
-        raise KeyError(f"El proceso '{process}' no tiene actividades configuradas.")
-    return PROCESS_ACTIVITIES[process]
