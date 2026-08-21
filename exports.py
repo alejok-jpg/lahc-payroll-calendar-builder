@@ -14,6 +14,10 @@ def export_multiprocess_calendar_to_excel(
     output_path: str = "Payroll_Calendar.xlsx",
     logo_path: Optional[str] = None
 ) -> str:
+    """
+    Exporta los eventos a un archivo Excel con una pestaña por proceso, 
+    respetando múltiples ciclos o quincenas por mes.
+    """
     wb = openpyxl.Workbook()
 
     font_title = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -38,9 +42,15 @@ def export_multiprocess_calendar_to_excel(
         ws = wb.create_sheet(title=proc_name[:31])
         ws.views.sheetView[0].showGridLines = True
 
-        periods = sorted(list({ev["period"] for ev in events}))
-        total_cols = 3 + len(periods)
+        # Obtener los periodos únicos ordenados cronológicamente por pay_date
+        period_order = []
+        for ev in sorted(events, key=lambda x: x["pay_date"]):
+            if ev["period"] not in period_order:
+                period_order.append(ev["period"])
 
+        total_cols = 3 + len(period_order)
+
+        # Inserción de Logo
         has_logo = logo_path and os.path.exists(logo_path)
         start_row = 1
         if has_logo:
@@ -53,6 +63,7 @@ def export_multiprocess_calendar_to_excel(
             ws.row_dimensions[3].height = 12
             start_row = 5
 
+        # Título
         ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=total_cols)
         title_cell = ws.cell(
             row=start_row,
@@ -64,8 +75,9 @@ def export_multiprocess_calendar_to_excel(
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[start_row].height = 30
 
+        # Encabezados
         header_row = start_row + 1
-        headers = ["Process", "Activity", "Offset (BH)"] + periods
+        headers = ["Process", "Activity", "Offset (BH)"] + period_order
         ws.row_dimensions[header_row].height = 24
 
         for col_num, header in enumerate(headers, 1):
@@ -75,6 +87,7 @@ def export_multiprocess_calendar_to_excel(
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = thin_border
 
+        # Matriz
         matrix: Dict[tuple, Dict[str, date]] = {}
         for ev in events:
             key = (ev["process"], ev["activity"], ev["offset_bh"])
@@ -82,6 +95,7 @@ def export_multiprocess_calendar_to_excel(
                 matrix[key] = {}
             matrix[key][ev["period"]] = ev["date"]
 
+        # Filas de actividades
         current_row = header_row + 1
         for row_idx, ((proc, act, offset), dates_by_period) in enumerate(matrix.items()):
             ws.row_dimensions[current_row].height = 20
@@ -98,7 +112,7 @@ def export_multiprocess_calendar_to_excel(
                 if use_zebra:
                     c.fill = fill_zebra
 
-            for col_offset, period in enumerate(periods):
+            for col_offset, period in enumerate(period_order):
                 col_num = 4 + col_offset
                 date_val = dates_by_period.get(period)
                 cell = ws.cell(row=current_row, column=col_num)
@@ -111,6 +125,7 @@ def export_multiprocess_calendar_to_excel(
 
             current_row += 1
 
+        # Ancho de columnas
         for col in ws.columns:
             max_len = max(len(str(cell.value or "")) for cell in col)
             col_letter = get_column_letter(col[0].column)
@@ -121,12 +136,3 @@ def export_multiprocess_calendar_to_excel(
 
     wb.save(output_path)
     return output_path
-
-def export_calendar_to_excel(events: List[Dict], country: str, client_name: str = "CLIENTE", output_path: str = "Payroll_Calendar.xlsx", logo_path: Optional[str] = None) -> str:
-    events_by_proc = {}
-    for ev in events:
-        proc = ev.get("process", "CALENDAR")
-        if proc not in events_by_proc:
-            events_by_proc[proc] = []
-        events_by_proc[proc].append(ev)
-    return export_multiprocess_calendar_to_excel(events_by_proc, country, client_name, output_path, logo_path)
