@@ -12,10 +12,10 @@ class ProcessType(Enum):
 @dataclass
 class ActivityRule:
     activity: str
-    offset_bh: int          # Días hábiles
+    offset_bh: int          # Días hábiles respecto a Pay Day
     default_time: str = "18:00"
 
-# Matriz operativa con SLAs
+# Matriz operativa con SLAs y Horarios estándar
 PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
     ProcessType.MONTHLY: [
         ActivityRule("CUT_OFF", -7, "18:00"),
@@ -36,6 +36,8 @@ PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
         ActivityRule("CUT_OFF", -5, "18:00"),
         ActivityRule("RUN", -4, "18:00"),
         ActivityRule("REPORTS", -3, "18:00"),
+        ActivityRule("RUN 2", -3, "18:00"),          # Nueva actividad Biweekly
+        ActivityRule("REPORTS R-2", -3, "18:00"),    # Nueva actividad Biweekly
         ActivityRule("REQUEST_SIGN_OFF", -2, "12:00"),
         ActivityRule("SEND_SIGN_OFF", -2, "15:00"),
         ActivityRule("APPROVE_SIGN_OFF", -2, "18:00"),
@@ -66,7 +68,6 @@ PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
         ActivityRule("GENERAL_LEDGER", -1, "18:00"),
         ActivityRule("PAY_DAY", 0, "09:00"),
     ],
-    # Para TERMINATION el cálculo inicia en TERMINATION_REQUEST (0) hacia adelante
     ProcessType.TERMINATION: [
         ActivityRule("TERMINATION_REQUEST", 0, "12:00"),
         ActivityRule("RUN", 1, "18:00"),
