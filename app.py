@@ -1,21 +1,21 @@
 import os
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, List
 import streamlit as st
 
 from countries import SUPPORTED_COUNTRIES_INFO
 from processes import ProcessType
-from generator import generate_process_calendar
+from generator import generate_process_calendar, generate_termination_calendar_from_cutoffs
 from exports import export_multiprocess_calendar_to_excel
 from loaders import generate_multiprocess_template, load_multiprocess_pay_dates_from_excel
 
 st.set_page_config(page_title="LAHC Payroll Calendar Builder", page_icon="📅", layout="wide")
 
 st.title("📅 LAHC Payroll Calendar Builder")
-st.markdown("Generador corporativo multicliente y multiproceso de calendarios operativos de nómina.")
+st.markdown("Generador corporativo de calendarios operativos de nómina.")
 
-# Sidebar - Configuración
+# Sidebar
 st.sidebar.header("⚙️ Configuración General")
 
 country_options = list(SUPPORTED_COUNTRIES_INFO.keys())
@@ -39,81 +39,118 @@ else:
 
 # Sección 1: Cliente
 st.subheader("1. Identificación del Cliente")
-client_name = st.text_input("Nombre del Cliente (se incluirá en el Excel y nombre de archivo):", value="CLIENTE_DEMO").strip()
+client_name = st.text_input("Nombre del Cliente:", value="CLIENTE_DEMO").strip()
 
-# Sección 2: Fechas de Pago por Proceso
-st.subheader("2. Carga de Fechas de Pago (Pay Days por Proceso)")
+# Sección 2: Configuración de Fechas
+st.subheader("2. Configuración de Fechas por Proceso")
+
+process_events: Dict[str, List[Dict]] = {}
+all_collected_dates: List[date] = []
 
 if not selected_processes:
-    st.warning("Selecciona al menos un proceso en el menú lateral para configurar sus fechas.")
-    process_pay_dates = {}
+    st.warning("Selecciona al menos un proceso en el panel lateral.")
 else:
-    mode = st.radio("Método de Carga:", ["✍️ Carga Manual por Proceso", "📂 Carga Masiva vía Excel", "📥 Descargar Plantilla Multiproceso"], horizontal=True)
+    proc_tabs = st.tabs([p.name for p in selected_processes])
 
-    process_pay_dates: Dict[str, List[date]] = {}
+    for idx, proc in enumerate(selected_processes):
+        with proc_tabs[idx]:
+            # Lógica especial para TERMINATIONS (Cálculo Forward por días de la semana)
+            if proc == ProcessType.TERMINATION:
+                st.markdown("### ⚙️ Configuración de Bajas (Cálculo desde TERMINATION REQUEST / Cut-Off)")
+                
+                term_mode = st.radio(
+                    "Modalidad para Bajas:",
+                    ["📅 Seleccionar Días de la Semana (Cálculo Automático)", "✍️ Ingreso Manual de Fechas de Corte"],
+                    key="term_mode_radio"
+                )
 
-    if mode == "✍️ Carga Manual por Proceso":
-        proc_tabs = st.tabs([p.name for p in selected_processes])
-        for idx, p in enumerate(selected_processes):
-            with proc_tabs[idx]:
-                st.markdown(f"**Fechas de pago para: {p.name}**")
+                if term_mode == "📅 Seleccionar Días de la Semana (Cálculo Automático)":
+                    col_days, col_range = st.columns(2)
+                    with col_days:
+                        st.markdown("**Días de la semana en que inicia el proceso:**")
+                        d_lunes = st.checkbox("Lunes (Mon)", value=False)
+                        d_martes = st.checkbox("Martes (Tue)", value=True)
+                        d_miercoles = st.checkbox("Miércoles (Wed)", value=False)
+                        d_jueves = st.checkbox("Jueves (Thu)", value=True)
+                        d_viernes = st.checkbox("Viernes (Fri)", value=False)
+
+                    selected_weekdays = []
+                    if d_lunes: selected_weekdays.append(0)
+                    if d_martes: selected_weekdays.append(1)
+                    if d_miercoles: selected_weekdays.append(2)
+                    if d_jueves: selected_weekdays.append(3)
+                    if d_viernes: selected_weekdays.append(4)
+
+                    with col_range:
+                        st.markdown("**Rango de fechas a proyectar:**")
+                        start_d = st.date_input("Fecha Inicio", value=date(2027, 1, 1))
+                        end_d = st.date_input("Fecha Fin", value=date(2027, 1, 31))
+
+                    if selected_weekdays and start_d <= end_d:
+                        cutoff_dates = []
+                        curr = start_d
+                        while curr <= end_d:
+                            if curr.weekday() in selected_weekdays:
+                                cutoff_dates.append(curr)
+                            curr += timedelta(days=1)
+
+                        events = generate_termination_calendar_from_cutoffs(selected_country, cutoff_dates)
+                        process_events[proc.name] = events
+                        all_collected_dates.extend(cutoff_dates)
+                        st.success(f"✓ Se generaron {len(cutoff_dates)} ciclos de baja proyectados.")
+                    else:
+                        st.warning("Selecciona al menos un día de la semana y un rango de fechas válido.")
+
+                else:
+                    num_fechas = st.number_input("Cantidad de fechas de corte a ingresar", min_value=1, max_value=50, value=2)
+                    cols = st.columns(min(int(num_fechas), 4))
+                    custom_cutoffs = []
+                    for i in range(int(num_fechas)):
+                        with cols[i % 4]:
+                            cd = st.date_input(f"Corte #{i+1}", value=date(2027, 1, (i+1)*5), key=f"cut_{i}")
+                            custom_cutoffs.append(cd)
+                    
+                    events = generate_termination_calendar_from_cutoffs(selected_country, custom_cutoffs)
+                    process_events[proc.name] = events
+                    all_collected_dates.extend(custom_cutoffs)
+
+            # Lógica para los demás procesos estándar (Monthly, Biweekly, etc.)
+            else:
+                st.markdown(f"**Carga de Fechas de Pago (Pay Days) para {proc.name}**")
                 num_fechas = st.number_input(
-                    f"Cantidad de periodos a ingresar ({p.name})",
+                    f"Cantidad de periodos ({proc.name})",
                     min_value=1,
                     max_value=24,
-                    value=2 if p == ProcessType.MONTHLY else 1,
-                    key=f"num_{p.name}"
+                    value=2 if proc == ProcessType.MONTHLY else 1,
+                    key=f"num_{proc.name}"
                 )
                 cols = st.columns(min(int(num_fechas), 4))
                 dates_list = []
                 for i in range(int(num_fechas)):
                     with cols[i % 4]:
                         d = st.date_input(
-                            f"{p.name} #{i+1}",
-                            value=date(2027, ((i % 12) + 1), 28 if p == ProcessType.MONTHLY else 15),
-                            key=f"date_{p.name}_{i}"
+                            f"{proc.name} #{i+1}",
+                            value=date(2027, ((i % 12) + 1), 28 if proc == ProcessType.MONTHLY else 15),
+                            key=f"date_{proc.name}_{i}"
                         )
                         dates_list.append(d)
-                process_pay_dates[p.name] = sorted(list(set(dates_list)))
-                st.caption(f"Fechas registradas: {', '.join([d.strftime('%d/%m/%Y') for d in process_pay_dates[p.name]])}")
-
-    elif mode == "📂 Carga Masiva vía Excel":
-        uploaded_file = st.file_uploader("Subí tu archivo Excel con una pestaña por proceso", type=["xlsx", "xls"])
-        if uploaded_file:
-            try:
-                loaded_dict = load_multiprocess_pay_dates_from_excel(uploaded_file)
-                for p in selected_processes:
-                    if p.name in loaded_dict:
-                        process_pay_dates[p.name] = loaded_dict[p.name]
-                        st.success(f"✓ {p.name}: {len(process_pay_dates[p.name])} fechas cargadas.")
-                    else:
-                        st.warning(f"⚠ No se encontró la pestaña '{p.name}' en el Excel.")
-            except Exception as e:
-                st.error(f"Error al procesar el Excel: {e}")
-
-    else:
-        tpl_year = st.number_input("Año de la plantilla", min_value=2024, max_value=2035, value=2027)
-        if st.button("Generar Plantilla"):
-            tpl_path = generate_multiprocess_template("template_temp.xlsx", year=tpl_year)
-            with open(tpl_path, "rb") as f:
-                st.download_button(
-                    label="⬇️ Descargar Plantilla Excel Multiproceso",
-                    data=f.read(),
-                    file_name=f"Template_PayDates_{tpl_year}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                
+                sorted_p_dates = sorted(list(set(dates_list)))
+                events = generate_process_calendar(selected_country, proc, sorted_p_dates)
+                process_events[proc.name] = events
+                all_collected_dates.extend(sorted_p_dates)
+                st.caption(f"Fechas registradas: {', '.join([d.strftime('%d/%m/%Y') for d in sorted_p_dates])}")
 
 # Sección 3: Logo
 st.subheader("3. Personalización Visual (Logo)")
 quiere_logo = st.radio("¿Desea incluir un logo en el encabezado del archivo Excel?", ["No", "Sí"], horizontal=True)
-
 uploaded_logo = None
 if quiere_logo == "Sí":
-    uploaded_logo = st.file_uploader("Seleccione o arrastre la imagen del logo (.png o .jpg)", type=["png", "jpg", "jpeg"])
+    uploaded_logo = st.file_uploader("Subí el logo (.png o .jpg)", type=["png", "jpg", "jpeg"])
     if uploaded_logo:
-        st.image(uploaded_logo, caption="Vista previa del logo a insertar", width=200)
+        st.image(uploaded_logo, caption="Vista previa", width=180)
 
-# Sección 4: Generación y Descarga
+# Sección 4: Generación
 st.subheader("4. Generación del Calendario")
 
 if st.button("🚀 Generar Calendario Operativo", type="primary"):
@@ -121,39 +158,23 @@ if st.button("🚀 Generar Calendario Operativo", type="primary"):
         st.error("Debes ingresar el nombre del cliente.")
     elif not selected_processes:
         st.error("Debes seleccionar al menos un proceso.")
-    elif not process_pay_dates or not any(process_pay_dates.values()):
-        st.error("Debes configurar al menos una fecha de pago para los procesos seleccionados.")
+    elif not process_events:
+        st.error("No hay eventos configurados para generar.")
     else:
         try:
-            events_by_process = {}
-            all_collected_dates = []
-
-            for proc in selected_processes:
-                dates = process_pay_dates.get(proc.name, [])
-                if dates:
-                    events = generate_process_calendar(
-                        country=selected_country,
-                        process_type=proc,
-                        pay_dates=dates
-                    )
-                    events_by_process[proc.name] = events
-                    all_collected_dates.extend(dates)
-
-            # Manejo del archivo temporal del logo
             temp_logo_path = None
             if quiere_logo == "Sí" and uploaded_logo:
-                temp_logo_path = f"temp_logo_{uploaded_logo.name}"
+                temp_logo_path = f"temp_{uploaded_logo.name}"
                 with open(temp_logo_path, "wb") as f:
                     f.write(uploaded_logo.getbuffer())
 
-            # Naming convention: Payroll_Calendar_<CLIENTE>_<PAIS>_<AÑO/PERIODO>.xlsx
             years = sorted(list({d.year for d in all_collected_dates}))
             year_str = "-".join(map(str, years)) if years else "2027"
             clean_client = re.sub(r'[\\/*?:"<>| ]', '_', client_name.strip())
             out_filename = f"Payroll_Calendar_{clean_client}_{selected_country}_{year_str}.xlsx"
 
             export_multiprocess_calendar_to_excel(
-                events_by_process=events_by_process,
+                events_by_process=process_events,
                 country=selected_country,
                 client_name=client_name,
                 output_path=out_filename,
@@ -173,4 +194,4 @@ if st.button("🚀 Generar Calendario Operativo", type="primary"):
                 )
 
         except Exception as e:
-            st.error(f"Ocurrió un error durante la generación: {e}")
+            st.error(f"Error durante la generación: {e}")
