@@ -6,7 +6,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image
 
-# Mapeo de días de la semana en español
+# Días de la semana en español
 WEEKDAYS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
 def format_date_with_weekday(d: Optional[date]) -> str:
@@ -30,7 +30,8 @@ def export_multiprocess_calendar_to_excel(
     
     fill_title = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     fill_header = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
-    fill_zebra = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    fill_master_hdr = PatternFill(start_color="1B365D", end_color="1B365D", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
 
     thin_border = Border(
         left=Side(style="thin", color="D9D9D9"),
@@ -39,6 +40,93 @@ def export_multiprocess_calendar_to_excel(
         bottom=Side(style="thin", color="D9D9D9"),
     )
 
+    # -------------------------------------------------------------
+    # 1. PESTAÑA CONSOLIDADA: MASTER_VIEW (Agenda anual unificada)
+    # -------------------------------------------------------------
+    ws_master = wb.active
+    ws_master.title = "MASTER_VIEW"
+    ws_master.views.sheetView[0].showGridLines = True
+
+    # Recolectar todos los eventos de todos los procesos
+    all_events: List[Dict] = []
+    for proc_name, ev_list in events_by_process.items():
+        all_events.extend(ev_list)
+
+    # Ordenar cronológicamente por Fecha y Horario
+    all_events.sort(key=lambda x: (x["date"], x.get("time", "00:00"), x["process"]))
+
+    start_row_m = 1
+    has_logo = logo_path and os.path.exists(logo_path)
+    if has_logo:
+        img_m = Image(logo_path)
+        img_m.width = 150
+        img_m.height = 50
+        ws_master.add_image(img_m, "A1")
+        ws_master.row_dimensions[1].height = 22
+        ws_master.row_dimensions[2].height = 22
+        ws_master.row_dimensions[3].height = 12
+        start_row_m = 5
+
+    # Título Master View
+    ws_master.merge_cells(start_row=start_row_m, start_column=1, end_row=start_row_m, end_column=7)
+    m_title = ws_master.cell(
+        row=start_row_m,
+        column=1,
+        value=f"PAYROLL MASTER SCHEDULE - {client_name.upper()} ({country.upper()})"
+    )
+    m_title.font = font_title
+    m_title.fill = fill_title
+    m_title.alignment = Alignment(horizontal="center", vertical="center")
+    ws_master.row_dimensions[start_row_m].height = 30
+
+    # Encabezados Master View
+    m_hdr_row = start_row_m + 1
+    m_headers = ["Fecha Operativa", "Proceso", "Periodo / Ciclo", "Actividad SLA", "Offset (BH)", "Horario (SLA)", "Notas / Control"]
+    ws_master.row_dimensions[m_hdr_row].height = 24
+
+    for col_num, h_text in enumerate(m_headers, 1):
+        cell = ws_master.cell(row=m_hdr_row, column=col_num, value=h_text)
+        cell.font = font_header
+        cell.fill = fill_master_hdr
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+
+    # Filas Master View
+    m_curr_row = m_hdr_row + 1
+    for row_idx, ev in enumerate(all_events):
+        ws_master.row_dimensions[m_curr_row].height = 20
+        use_zebra = (row_idx % 2 == 1)
+
+        c_date = ws_master.cell(row=m_curr_row, column=1, value=format_date_with_weekday(ev["date"]))
+        c_proc = ws_master.cell(row=m_curr_row, column=2, value=ev["process"])
+        c_per  = ws_master.cell(row=m_curr_row, column=3, value=ev["period"])
+        c_act  = ws_master.cell(row=m_curr_row, column=4, value=ev["activity"])
+        c_off  = ws_master.cell(row=m_curr_row, column=5, value=f"{ev.get('offset_bh', 0)} BH")
+        c_time = ws_master.cell(row=m_curr_row, column=6, value=ev.get("time", "18:00"))
+        c_note = ws_master.cell(row=m_curr_row, column=7, value="")
+
+        c_date.alignment = Alignment(horizontal="center", vertical="center")
+        c_proc.alignment = Alignment(horizontal="center", vertical="center")
+        c_per.alignment  = Alignment(horizontal="center", vertical="center")
+        c_off.alignment  = Alignment(horizontal="center", vertical="center")
+        c_time.alignment = Alignment(horizontal="center", vertical="center")
+
+        for c in (c_date, c_proc, c_per, c_act, c_off, c_time, c_note):
+            c.font = font_body
+            c.border = thin_border
+            if use_zebra:
+                c.fill = fill_zebra
+
+        m_curr_row += 1
+
+    for col in ws_master.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws_master.column_dimensions[col_letter].width = max(max_len + 4, 18)
+
+    # -------------------------------------------------------------
+    # 2. PESTAÑAS INDIVIDUALES POR PROCESO (Estructura Matricial)
+    # -------------------------------------------------------------
     for proc_name, events in events_by_process.items():
         if not events:
             continue
@@ -51,10 +139,8 @@ def export_multiprocess_calendar_to_excel(
             if ev["period"] not in period_order:
                 period_order.append(ev["period"])
 
-        total_cols = 4 + len(period_order)  # Process, Activity, Offset, Time + Periodos
+        total_cols = 4 + len(period_order)
 
-        # Logo
-        has_logo = logo_path and os.path.exists(logo_path)
         start_row = 1
         if has_logo:
             img = Image(logo_path)
@@ -90,7 +176,7 @@ def export_multiprocess_calendar_to_excel(
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = thin_border
 
-        # Matriz: (Process, Activity, Offset, Time)
+        # Matriz
         matrix: Dict[tuple, Dict[str, date]] = {}
         for ev in events:
             key = (ev["process"], ev["activity"], ev["offset_bh"], ev.get("time", "18:00"))
@@ -135,9 +221,6 @@ def export_multiprocess_calendar_to_excel(
             max_len = max(len(str(cell.value or "")) for cell in col)
             col_letter = get_column_letter(col[0].column)
             ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
-
-    if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
-        wb.remove(wb["Sheet"])
 
     wb.save(output_path)
     return output_path

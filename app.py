@@ -13,7 +13,7 @@ from loaders import generate_multiprocess_template, load_multiprocess_pay_dates_
 st.set_page_config(page_title="LAHC Payroll Calendar Builder", page_icon="📅", layout="wide")
 
 st.title("📅 LAHC Payroll Calendar Builder")
-st.markdown("Generador corporativo de calendarios operativos de nómina.")
+st.markdown("Generador corporativo de calendarios operativos y Master Schedule de nómina.")
 
 # Sidebar
 st.sidebar.header("⚙️ Configuración General")
@@ -54,7 +54,6 @@ else:
 
     for idx, proc in enumerate(selected_processes):
         with proc_tabs[idx]:
-            # Lógica especial para TERMINATIONS (Cálculo Forward por días de la semana)
             if proc == ProcessType.TERMINATION:
                 st.markdown("### ⚙️ Configuración de Bajas (Cálculo desde TERMINATION REQUEST / Cut-Off)")
                 
@@ -114,7 +113,6 @@ else:
                     process_events[proc.name] = events
                     all_collected_dates.extend(custom_cutoffs)
 
-            # Lógica para los demás procesos estándar (Monthly, Biweekly, etc.)
             else:
                 st.markdown(f"**Carga de Fechas de Pago (Pay Days) para {proc.name}**")
                 num_fechas = st.number_input(
@@ -185,12 +183,13 @@ if st.button("🚀 Generar Calendario Operativo", type="primary"):
                 os.remove(temp_logo_path)
 
             with open(out_filename, "rb") as f:
-                st.success("¡Calendario multiproceso generado exitosamente!")
+                st.success("¡Calendario multiproceso con MASTER VIEW generado exitosamente!")
                 st.download_button(
                     label=f"📥 Descargar {out_filename}",
                     data=f.read(),
                     file_name=out_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
                 )
 
         except Exception as e:
