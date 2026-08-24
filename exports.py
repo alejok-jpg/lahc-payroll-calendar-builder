@@ -1,11 +1,19 @@
 import os
-import re
 from datetime import date
 from typing import List, Dict, Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image
+
+# Mapeo de días de la semana en español
+WEEKDAYS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+def format_date_with_weekday(d: Optional[date]) -> str:
+    if not d:
+        return "-"
+    weekday_str = WEEKDAYS_ES[d.weekday()]
+    return f"{weekday_str} {d.strftime('%d/%m/%Y')}"
 
 def export_multiprocess_calendar_to_excel(
     events_by_process: Dict[str, List[Dict]],
@@ -14,10 +22,6 @@ def export_multiprocess_calendar_to_excel(
     output_path: str = "Payroll_Calendar.xlsx",
     logo_path: Optional[str] = None
 ) -> str:
-    """
-    Exporta los eventos a un archivo Excel con una pestaña por proceso, 
-    respetando múltiples ciclos o quincenas por mes.
-    """
     wb = openpyxl.Workbook()
 
     font_title = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -42,15 +46,14 @@ def export_multiprocess_calendar_to_excel(
         ws = wb.create_sheet(title=proc_name[:31])
         ws.views.sheetView[0].showGridLines = True
 
-        # Obtener los periodos únicos ordenados cronológicamente por pay_date
         period_order = []
         for ev in sorted(events, key=lambda x: x["pay_date"]):
             if ev["period"] not in period_order:
                 period_order.append(ev["period"])
 
-        total_cols = 3 + len(period_order)
+        total_cols = 4 + len(period_order)  # Process, Activity, Offset, Time + Periodos
 
-        # Inserción de Logo
+        # Logo
         has_logo = logo_path and os.path.exists(logo_path)
         start_row = 1
         if has_logo:
@@ -77,7 +80,7 @@ def export_multiprocess_calendar_to_excel(
 
         # Encabezados
         header_row = start_row + 1
-        headers = ["Process", "Activity", "Offset (BH)"] + period_order
+        headers = ["Process", "Activity", "Offset (BH)", "Time (SLA)"] + period_order
         ws.row_dimensions[header_row].height = 24
 
         for col_num, header in enumerate(headers, 1):
@@ -87,36 +90,39 @@ def export_multiprocess_calendar_to_excel(
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = thin_border
 
-        # Matriz
+        # Matriz: (Process, Activity, Offset, Time)
         matrix: Dict[tuple, Dict[str, date]] = {}
         for ev in events:
-            key = (ev["process"], ev["activity"], ev["offset_bh"])
+            key = (ev["process"], ev["activity"], ev["offset_bh"], ev.get("time", "18:00"))
             if key not in matrix:
                 matrix[key] = {}
             matrix[key][ev["period"]] = ev["date"]
 
-        # Filas de actividades
+        # Filas de datos
         current_row = header_row + 1
-        for row_idx, ((proc, act, offset), dates_by_period) in enumerate(matrix.items()):
+        for row_idx, ((proc, act, offset, time_val), dates_by_period) in enumerate(matrix.items()):
             ws.row_dimensions[current_row].height = 20
             use_zebra = (row_idx % 2 == 1)
 
             c1 = ws.cell(row=current_row, column=1, value=proc)
             c2 = ws.cell(row=current_row, column=2, value=act)
             c3 = ws.cell(row=current_row, column=3, value=f"{offset} BH")
-            c3.alignment = Alignment(horizontal="center", vertical="center")
+            c4 = ws.cell(row=current_row, column=4, value=time_val)
 
-            for c in (c1, c2, c3):
+            c3.alignment = Alignment(horizontal="center", vertical="center")
+            c4.alignment = Alignment(horizontal="center", vertical="center")
+
+            for c in (c1, c2, c3, c4):
                 c.font = font_body
                 c.border = thin_border
                 if use_zebra:
                     c.fill = fill_zebra
 
             for col_offset, period in enumerate(period_order):
-                col_num = 4 + col_offset
+                col_num = 5 + col_offset
                 date_val = dates_by_period.get(period)
                 cell = ws.cell(row=current_row, column=col_num)
-                cell.value = date_val.strftime("%d/%m/%Y") if date_val else "-"
+                cell.value = format_date_with_weekday(date_val)
                 cell.font = font_body
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = thin_border
@@ -125,7 +131,6 @@ def export_multiprocess_calendar_to_excel(
 
             current_row += 1
 
-        # Ancho de columnas
         for col in ws.columns:
             max_len = max(len(str(cell.value or "")) for cell in col)
             col_letter = get_column_letter(col[0].column)

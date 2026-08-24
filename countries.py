@@ -1,29 +1,25 @@
 from datetime import date, timedelta
 import holidays
 
+# Países habilitados
 SUPPORTED_COUNTRIES_INFO = {
     "AR": {"name": "Argentina"},
-    "CL": {"name": "Chile"},
     "CO": {"name": "Colombia"},
-    "CR": {"name": "Costa Rica"},
-    "MX": {"name": "México"},
-    "PE": {"name": "Perú"},
-    "BR": {"name": "Brasil"},
-    "UY": {"name": "Uruguay"}
+    "CR": {"name": "Costa Rica"}
 }
 
 class CountryCalendar:
     def __init__(self, country_code: str):
         self.country_code = country_code.upper()
-        # Carga los feriados oficiales usando la librería holidays
+        if self.country_code not in SUPPORTED_COUNTRIES_INFO:
+            raise ValueError(f"País no soportado: {self.country_code}")
         try:
             self.holidays = holidays.country_holidays(self.country_code)
         except NotImplementedError:
             self.holidays = {}
 
     def is_business_day(self, d: date) -> bool:
-        # Lunes=0, Domingo=6. Fines de semana = 5 y 6
-        if d.weekday() >= 5:
+        if d.weekday() >= 5:  # Sábado (5) o Domingo (6)
             return False
         if d in self.holidays:
             return False
@@ -42,5 +38,4 @@ class CountryCalendar:
         return current
 
 def get_country_calendar(country_code: str) -> CountryCalendar:
-    """Función fábrica para instanciar el calendario del país."""
     return CountryCalendar(country_code)

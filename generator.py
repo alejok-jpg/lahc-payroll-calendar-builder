@@ -8,15 +8,10 @@ def generate_process_calendar(
     process_type: ProcessType,
     pay_dates: List[date]
 ) -> List[Dict]:
-    """
-    Genera la lista de eventos para un proceso y país dados a partir de las fechas de pago.
-    Soporta múltiples fechas de pago por mes (Biweekly / Semimonthly).
-    """
     cal = get_country_calendar(country)
     rules = PROCESS_RULES.get(process_type, [])
     events = []
 
-    # Detectar si hay meses con múltiples fechas de pago para este proceso
     sorted_dates = sorted(pay_dates)
     dates_by_month = {}
     for pd in sorted_dates:
@@ -25,7 +20,6 @@ def generate_process_calendar(
 
     for pay_date in sorted_dates:
         m_key = pay_date.strftime("%Y-%m")
-        # Si el mes tiene más de un pago (Biweekly/Semimonthly), numerar el ciclo: (Q1), (Q2), etc.
         if len(dates_by_month[m_key]) > 1:
             idx = dates_by_month[m_key].index(pay_date) + 1
             period_label = f"{m_key} (Q{idx})"
@@ -41,6 +35,7 @@ def generate_process_calendar(
                 "pay_date": pay_date,
                 "activity": rule.activity,
                 "offset_bh": rule.offset_bh,
+                "time": rule.default_time,
                 "date": calculated_date
             })
 
