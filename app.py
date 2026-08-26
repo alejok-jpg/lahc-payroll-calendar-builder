@@ -42,12 +42,12 @@ else:
 st.subheader("1. Identificación del Cliente")
 client_name = st.text_input("Nombre del Cliente:", value="CLIENTE_DEMO").strip()
 
-# Sección 2: Personalización de SLAs (Opcional)
+# Sección 2: Personalización de SLAs y Responsables (Opcional)
 custom_rules_by_process: Dict[str, List[ActivityRule]] = {}
 
 if selected_processes:
-    with st.expander("🛠️ Personalizar SLAs, Horarios y Actividades por Cliente (Opcional)", expanded=False):
-        st.info("Podés modificar los días de anticipación (Offset BH), horarios SLA o desmarcar actividades que este cliente no utilice.")
+    with st.expander("🛠️ Personalizar SLAs, Horarios y Responsables (Owner) por Cliente (Opcional)", expanded=False):
+        st.info("Podés modificar los días de anticipación (Offset BH), horarios, responsables (Client / ADP) o desmarcar actividades que este cliente no utilice.")
         sla_tabs = st.tabs([p.name for p in selected_processes])
         
         for idx, proc in enumerate(selected_processes):
@@ -57,6 +57,7 @@ if selected_processes:
                     {
                         "Incluir": True,
                         "Actividad": r.activity,
+                        "Owner": getattr(r, "owner", "ADP"),
                         "Offset (BH)": r.offset_bh,
                         "Horario (SLA)": r.default_time
                     }
@@ -68,6 +69,7 @@ if selected_processes:
                     column_config={
                         "Incluir": st.column_config.CheckboxColumn("Incluir", default=True),
                         "Actividad": st.column_config.TextColumn("Actividad", disabled=True),
+                        "Owner": st.column_config.SelectboxColumn("Owner", options=["Client", "ADP"], required=True),
                         "Offset (BH)": st.column_config.NumberColumn("Offset (BH)", step=1),
                         "Horario (SLA)": st.column_config.TextColumn("Horario (SLA)"),
                     },
@@ -76,7 +78,6 @@ if selected_processes:
                     key=f"sla_editor_{proc.name}"
                 )
 
-                # Reconstruir las reglas activas para este proceso
                 active_rules = []
                 for _, row in edited_df.iterrows():
                     if row["Incluir"]:
@@ -84,7 +85,8 @@ if selected_processes:
                             ActivityRule(
                                 activity=str(row["Actividad"]),
                                 offset_bh=int(row["Offset (BH)"]),
-                                default_time=str(row["Horario (SLA)"]).strip()
+                                default_time=str(row["Horario (SLA)"]).strip(),
+                                owner=str(row["Owner"]).strip()
                             )
                         )
                 custom_rules_by_process[proc.name] = active_rules
@@ -104,9 +106,7 @@ else:
         horizontal=True
     )
 
-    # -------------------------------------------------------------
-    # MODO 1: CARGA MANUAL / DÍAS DE LA SEMANA
-    # -------------------------------------------------------------
+    # MODO 1: CARGA MANUAL
     if mode == "✍️ Carga Manual / Días de la Semana":
         proc_tabs = st.tabs([p.name for p in selected_processes])
 
@@ -204,9 +204,7 @@ else:
                     all_collected_dates.extend(sorted_p_dates)
                     st.caption(f"Fechas registradas: {', '.join([d.strftime('%d/%m/%Y') for d in sorted_p_dates])}")
 
-    # -------------------------------------------------------------
-    # MODO 2: CARGA MASIVA VÍA EXCEL
-    # -------------------------------------------------------------
+    # MODO 2: CARGA MASIVA
     elif mode == "📂 Carga Masiva vía Excel":
         st.markdown("Cargue un archivo Excel que contenga una pestaña por cada proceso con las fechas o la configuración semanal de Bajas.")
         uploaded_file = st.file_uploader("Seleccione el archivo Excel completado:", type=["xlsx", "xls"])
@@ -235,9 +233,7 @@ else:
             except Exception as e:
                 st.error(f"Error al procesar el archivo Excel: {e}")
 
-    # -------------------------------------------------------------
-    # MODO 3: DESCARGAR PLANTILLA EXCEL MULTIPROCESO
-    # -------------------------------------------------------------
+    # MODO 3: PLANTILLA
     else:
         st.markdown("Genere una plantilla Excel preformateada con una pestaña para cada proceso activo:")
         tpl_year = st.number_input("Año de referencia para la plantilla:", min_value=2024, max_value=2035, value=2027)
@@ -296,7 +292,7 @@ if st.button("🚀 Generar Calendario Operativo", type="primary"):
                 os.remove(temp_logo_path)
 
             with open(out_filename, "rb") as f:
-                st.success("¡Calendario multiproceso con MASTER VIEW generado exitosamente!")
+                st.success("¡Calendario multiproceso generado exitosamente!")
                 st.download_button(
                     label=f"📥 Descargar {out_filename}",
                     data=f.read(),

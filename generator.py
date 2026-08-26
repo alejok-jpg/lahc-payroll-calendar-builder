@@ -9,10 +9,6 @@ def generate_process_calendar(
     pay_dates: List[date],
     custom_rules: Optional[List[ActivityRule]] = None
 ) -> List[Dict]:
-    """
-    Genera eventos a partir de Pay Day.
-    Permite inyectar custom_rules específicas del cliente si se configuraron.
-    """
     cal = get_country_calendar(country)
     rules = custom_rules if custom_rules is not None else PROCESS_RULES.get(process_type, [])
     events = []
@@ -41,6 +37,7 @@ def generate_process_calendar(
                 "activity": rule.activity,
                 "offset_bh": rule.offset_bh,
                 "time": rule.default_time,
+                "owner": getattr(rule, "owner", "ADP"),
                 "date": calculated_date
             })
 
@@ -51,10 +48,6 @@ def generate_termination_calendar_from_cutoffs(
     cutoff_dates: List[date],
     custom_rules: Optional[List[ActivityRule]] = None
 ) -> List[Dict]:
-    """
-    Generación hacia adelante para TERMINATION a partir de cortes.
-    Permite inyectar custom_rules específicas del cliente si se configuraron.
-    """
     cal = get_country_calendar(country)
     rules = custom_rules if custom_rules is not None else PROCESS_RULES.get(ProcessType.TERMINATION, [])
     events = []
@@ -78,6 +71,7 @@ def generate_termination_calendar_from_cutoffs(
                 "activity": rule.activity,
                 "offset_bh": rule.offset_bh,
                 "time": rule.default_time,
+                "owner": getattr(rule, "owner", "ADP"),
                 "date": calculated_date
             })
 
