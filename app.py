@@ -2,10 +2,11 @@ import os
 import re
 from datetime import datetime, date, timedelta
 from typing import Dict, List
+import pandas as pd
 import streamlit as st
 
 from countries import SUPPORTED_COUNTRIES_INFO
-from processes import ProcessType
+from processes import ProcessType, PROCESS_RULES, ActivityRule
 from generator import generate_process_calendar, generate_termination_calendar_from_cutoffs
 from exports import export_multiprocess_calendar_to_excel
 from loaders import generate_multiprocess_template, load_multiprocess_pay_dates_from_excel
@@ -39,10 +40,57 @@ else:
 
 # Sección 1: Cliente
 st.subheader("1. Identificación del Cliente")
-client_name = st.text_input("Nombre del Cliente (se incluirá en el Excel y nombre de archivo):", value="CLIENTE_DEMO").strip()
+client_name = st.text_input("Nombre del Cliente:", value="CLIENTE_DEMO").strip()
 
-# Sección 2: Configuración de Fechas
-st.subheader("2. Carga y Configuración de Fechas por Proceso")
+# Sección 2: Personalización de SLAs (Opcional)
+custom_rules_by_process: Dict[str, List[ActivityRule]] = {}
+
+if selected_processes:
+    with st.expander("🛠️ Personalizar SLAs, Horarios y Actividades por Cliente (Opcional)", expanded=False):
+        st.info("Podés modificar los días de anticipación (Offset BH), horarios SLA o desmarcar actividades que este cliente no utilice.")
+        sla_tabs = st.tabs([p.name for p in selected_processes])
+        
+        for idx, proc in enumerate(selected_processes):
+            with sla_tabs[idx]:
+                default_rules = PROCESS_RULES.get(proc, [])
+                df_rules = pd.DataFrame([
+                    {
+                        "Incluir": True,
+                        "Actividad": r.activity,
+                        "Offset (BH)": r.offset_bh,
+                        "Horario (SLA)": r.default_time
+                    }
+                    for r in default_rules
+                ])
+
+                edited_df = st.data_editor(
+                    df_rules,
+                    column_config={
+                        "Incluir": st.column_config.CheckboxColumn("Incluir", default=True),
+                        "Actividad": st.column_config.TextColumn("Actividad", disabled=True),
+                        "Offset (BH)": st.column_config.NumberColumn("Offset (BH)", step=1),
+                        "Horario (SLA)": st.column_config.TextColumn("Horario (SLA)"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"sla_editor_{proc.name}"
+                )
+
+                # Reconstruir las reglas activas para este proceso
+                active_rules = []
+                for _, row in edited_df.iterrows():
+                    if row["Incluir"]:
+                        active_rules.append(
+                            ActivityRule(
+                                activity=str(row["Actividad"]),
+                                offset_bh=int(row["Offset (BH)"]),
+                                default_time=str(row["Horario (SLA)"]).strip()
+                            )
+                        )
+                custom_rules_by_process[proc.name] = active_rules
+
+# Sección 3: Configuración de Fechas
+st.subheader("2. Carga y Configuración de Fechas")
 
 process_events: Dict[str, List[Dict]] = {}
 all_collected_dates: List[date] = []
@@ -64,6 +112,8 @@ else:
 
         for idx, proc in enumerate(selected_processes):
             with proc_tabs[idx]:
+                rules_for_proc = custom_rules_by_process.get(proc.name)
+
                 if proc == ProcessType.TERMINATION:
                     st.markdown("### ⚙️ Configuración de Bajas (Cálculo desde TERMINATION REQUEST / Cut-Off)")
                     term_mode = st.radio(
@@ -102,7 +152,9 @@ else:
                                     cutoff_dates.append(curr)
                                 curr += timedelta(days=1)
 
-                            events = generate_termination_calendar_from_cutoffs(selected_country, cutoff_dates)
+                            events = generate_termination_calendar_from_cutoffs(
+                                selected_country, cutoff_dates, custom_rules=rules_for_proc
+                            )
                             process_events[proc.name] = events
                             all_collected_dates.extend(cutoff_dates)
                             st.success(f"✓ Se generaron {len(cutoff_dates)} ciclos de baja proyectados.")
@@ -118,7 +170,9 @@ else:
                                 cd = st.date_input(f"Corte #{i+1}", value=date(2027, 1, (i+1)*5), key=f"cut_{i}")
                                 custom_cutoffs.append(cd)
                         
-                        events = generate_termination_calendar_from_cutoffs(selected_country, custom_cutoffs)
+                        events = generate_termination_calendar_from_cutoffs(
+                            selected_country, custom_cutoffs, custom_rules=rules_for_proc
+                        )
                         process_events[proc.name] = events
                         all_collected_dates.extend(custom_cutoffs)
 
@@ -143,7 +197,9 @@ else:
                             dates_list.append(d)
                     
                     sorted_p_dates = sorted(list(set(dates_list)))
-                    events = generate_process_calendar(selected_country, proc, sorted_p_dates)
+                    events = generate_process_calendar(
+                        selected_country, proc, sorted_p_dates, custom_rules=rules_for_proc
+                    )
                     process_events[proc.name] = events
                     all_collected_dates.extend(sorted_p_dates)
                     st.caption(f"Fechas registradas: {', '.join([d.strftime('%d/%m/%Y') for d in sorted_p_dates])}")
@@ -152,19 +208,24 @@ else:
     # MODO 2: CARGA MASIVA VÍA EXCEL
     # -------------------------------------------------------------
     elif mode == "📂 Carga Masiva vía Excel":
-        st.markdown("Cargue un archivo Excel que contenga una pestaña por cada proceso con la columna `PAY_DATE` (o `CUT_OFF` para Bajas).")
+        st.markdown("Cargue un archivo Excel que contenga una pestaña por cada proceso con las fechas o la configuración semanal de Bajas.")
         uploaded_file = st.file_uploader("Seleccione el archivo Excel completado:", type=["xlsx", "xls"])
         
         if uploaded_file:
             try:
                 loaded_dict = load_multiprocess_pay_dates_from_excel(uploaded_file)
                 for proc in selected_processes:
+                    rules_for_proc = custom_rules_by_process.get(proc.name)
                     if proc.name in loaded_dict and loaded_dict[proc.name]:
                         dates = loaded_dict[proc.name]
                         if proc == ProcessType.TERMINATION:
-                            events = generate_termination_calendar_from_cutoffs(selected_country, dates)
+                            events = generate_termination_calendar_from_cutoffs(
+                                selected_country, dates, custom_rules=rules_for_proc
+                            )
                         else:
-                            events = generate_process_calendar(selected_country, proc, dates)
+                            events = generate_process_calendar(
+                                selected_country, proc, dates, custom_rules=rules_for_proc
+                            )
                         
                         process_events[proc.name] = events
                         all_collected_dates.extend(dates)
@@ -191,7 +252,7 @@ else:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-# Sección 3: Logo
+# Sección 4: Logo
 st.subheader("3. Personalización Visual (Logo)")
 quiere_logo = st.radio("¿Desea incluir un logo en el encabezado del archivo Excel?", ["No", "Sí"], horizontal=True)
 uploaded_logo = None
@@ -200,7 +261,7 @@ if quiere_logo == "Sí":
     if uploaded_logo:
         st.image(uploaded_logo, caption="Vista previa del logo", width=180)
 
-# Sección 4: Generación
+# Sección 5: Generación
 st.subheader("4. Generación del Calendario")
 
 if st.button("🚀 Generar Calendario Operativo", type="primary"):

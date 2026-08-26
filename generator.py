@@ -1,16 +1,20 @@
 from datetime import date, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional
 from countries import get_country_calendar
-from processes import ProcessType, PROCESS_RULES
+from processes import ProcessType, PROCESS_RULES, ActivityRule
 
 def generate_process_calendar(
     country: str,
     process_type: ProcessType,
-    pay_dates: List[date]
+    pay_dates: List[date],
+    custom_rules: Optional[List[ActivityRule]] = None
 ) -> List[Dict]:
-    """Generación estándar basada en Pay Day (D-N hacia atrás)."""
+    """
+    Genera eventos a partir de Pay Day.
+    Permite inyectar custom_rules específicas del cliente si se configuraron.
+    """
     cal = get_country_calendar(country)
-    rules = PROCESS_RULES.get(process_type, [])
+    rules = custom_rules if custom_rules is not None else PROCESS_RULES.get(process_type, [])
     events = []
 
     sorted_dates = sorted(pay_dates)
@@ -44,19 +48,20 @@ def generate_process_calendar(
 
 def generate_termination_calendar_from_cutoffs(
     country: str,
-    cutoff_dates: List[date]
+    cutoff_dates: List[date],
+    custom_rules: Optional[List[ActivityRule]] = None
 ) -> List[Dict]:
     """
-    Generación hacia adelante para TERMINATION a partir de TERMINATION_REQUEST / CUT_OFF.
+    Generación hacia adelante para TERMINATION a partir de cortes.
+    Permite inyectar custom_rules específicas del cliente si se configuraron.
     """
     cal = get_country_calendar(country)
-    rules = PROCESS_RULES.get(ProcessType.TERMINATION, [])
+    rules = custom_rules if custom_rules is not None else PROCESS_RULES.get(ProcessType.TERMINATION, [])
     events = []
 
     sorted_cutoffs = sorted(cutoff_dates)
 
     for idx, raw_cutoff in enumerate(sorted_cutoffs, 1):
-        # Si el día de corte cae fin de semana o feriado, se ajusta al hábil más próximo
         actual_cutoff = raw_cutoff
         if not cal.is_business_day(actual_cutoff):
             actual_cutoff = cal.offset_business_days(actual_cutoff, 1)
@@ -69,7 +74,7 @@ def generate_termination_calendar_from_cutoffs(
                 "country": country,
                 "process": ProcessType.TERMINATION.name,
                 "period": period_label,
-                "pay_date": actual_cutoff,  # Se toma el corte como fecha pivote de orden
+                "pay_date": actual_cutoff,
                 "activity": rule.activity,
                 "offset_bh": rule.offset_bh,
                 "time": rule.default_time,
