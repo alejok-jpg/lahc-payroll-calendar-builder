@@ -32,8 +32,8 @@ PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
         ActivityRule("GENERAL_LEDGER", -1, "18:00", "ADP"),
         ActivityRule("OPEN_G2", -1, "18:00", "ADP"),
         ActivityRule("PAY_DAY", 0, "09:00", "Client"),
-        ActivityRule("LEGAL REPORTS", 2, "18:00", "ADP"),       # Exclusivo ciclo regular
-        ActivityRule("LEGAL REPORTS 2", 5, "18:00", "ADP"),     # Exclusivo ciclo regular
+        ActivityRule("LEGAL REPORTS", 2, "18:00", "ADP"),
+        ActivityRule("LEGAL REPORTS 2", 5, "18:00", "ADP"),
     ],
     ProcessType.BIWEEKLY: [
         ActivityRule("CUT_OFF", -5, "18:00", "Client"),
@@ -48,8 +48,8 @@ PROCESS_RULES: Dict[ProcessType, List[ActivityRule]] = {
         ActivityRule("BANK_FILE_APPROVAL", -1, "16:00", "Client"),
         ActivityRule("GENERAL_LEDGER", -1, "18:00", "ADP"),
         ActivityRule("PAY_DAY", 0, "09:00", "Client"),
-        ActivityRule("LEGAL REPORTS", 2, "18:00", "ADP"),       # Exclusivo ciclo regular
-        ActivityRule("LEGAL REPORTS 2", 5, "18:00", "ADP"),     # Exclusivo ciclo regular
+        ActivityRule("LEGAL REPORTS", 2, "18:00", "ADP"),
+        ActivityRule("LEGAL REPORTS 2", 5, "18:00", "ADP"),
     ],
     ProcessType.OFF_CYCLE: [
         ActivityRule("CUT_OFF", -4, "18:00", "Client"),
